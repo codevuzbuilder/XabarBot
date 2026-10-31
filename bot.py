@@ -2,8 +2,10 @@
 import re, sys, time, threading
 import requests
 from core import *
+from pay import *
 from ops import *
 from buttons import *   # tugmalarni ro'yxatga oladi (ROUTES)
+from partner import *   # hamkor paneli
 
 MEDIA = {"photo": ("sendPhoto", "photo"), "video": ("sendVideo", "video"), "voice": ("sendVoice", "voice"),
          "video_note": ("sendVideoNote", "video_note"), "document": ("sendDocument", "document"),
@@ -86,7 +88,7 @@ class Bot:
     def conn(s, c):
         uid = c["user"]["id"]
         if c.get("is_enabled"):
-            reg(uid, s.partner)
+            reg(uid, s.partner, None, s.t)
             q("INSERT OR REPLACE INTO conns VALUES(?,?)", (c["id"], uid))
             s.send(c["user_chat_id"], "✅ Akkaunt ulandi. O'chirilgan va tahrirlangan xabarlar shu yerga keladi.")
         else:
@@ -137,16 +139,18 @@ class Bot:
             return s.send(uid, "🔧 Bot vaqtincha o'chirilgan. Keyinroq urinib ko'ring.")
         ref = None
         if t.startswith("/start ref_") and t[11:].isdigit(): ref = int(t[11:])
-        new = reg(uid, s.partner, ref)
+        new = reg(uid, s.partner, ref, s.t)
         if new is None: return s.send(uid, "🔒 Hozircha ro'yxatdan o'tish yopiq.")
         u = U(uid)
         if u["banned"]: return s.send(uid, "🚫 Siz bloklangansiz.")
+        if s.partner and q("SELECT 1 FROM pbans WHERE partner=? AND user_id=?", (s.partner, uid), True):
+            return s.send(uid, "🚫 Siz bloklangansiz.")
         if new and g("notify_admin_new") == "1":
             main_bot().send(ADMIN_ID, f"🆕 Yangi foydalanuvchi: <code>{uid}</code> ({esc(m['from'].get('first_name'))})")
         if not gate(s, uid):
             return s.send(uid, f"📢 Botdan foydalanish uchun kanalga a'zo bo'ling: {g('req_channel')}\n"
                                f"So'ng /start bosing.")
-        if t.startswith("/start"): return s.menu(uid, g("welcome_text"))
+        if t.startswith("/start"): return s.menu(uid, ptext(s, "welcome_text"))
         mt = re.match(r"/(ok|no)_(\d+)$", t)
         if mt and is_admin(uid): return s.receipt_decision(uid, mt.group(1), int(mt.group(2)))
         if t in ROUTES:
@@ -240,6 +244,9 @@ class Bot:
         elif k == "bc" and is_admin(uid):
             STATE.pop(uid, None)
             broadcast(s, uid, st[1], t)
+        elif k in ("pset", "pop", "pbc"):
+            out = partner_state(s, uid, st, m)
+            if out: s.send(uid, out)
         else:
             s.menu(uid)
 
