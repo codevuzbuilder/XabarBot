@@ -1,0 +1,54 @@
+name: Bot 24/7
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: bot-24-7
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Bazani tiklash
+        uses: actions/cache/restore@v4
+        with:
+          path: bot.db
+          key: botdb-${{ github.run_id }}
+          restore-keys: botdb-
+      - name: Botni ishga tushirish
+        id: bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          BACKUP_HOURS: "1"
+          PYTHONUNBUFFERED: "1"
+        run: |
+          timeout 340m python bot.py && code=0 || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" -eq 124 ]
+      - name: Bazani saqlash
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: bot.db
+          key: botdb-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Keyingi ishga tushirish
+        if: steps.bot.outputs.code == '124'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run bot.yml --ref "$GITHUB_REF_NAME"
