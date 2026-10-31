@@ -266,11 +266,26 @@ def poller():
         except Exception: elog()
 
 
+def backup_to_admin():
+    """Bazaning zaxira nusxasini adminga yuboradi (GitHub Actions kabi vaqtinchalik muhit uchun)."""
+    dst = sqlite3.connect("backup_tmp.db")
+    with lock: con.backup(dst)
+    dst.close()
+    with open("backup_tmp.db", "rb") as f: data = f.read()
+    os.remove("backup_tmp.db")
+    main_bot().upload("sendDocument", "document", "bot_backup.db", data, chat_id=ADMIN_ID,
+                      caption=time.strftime("💾 Zaxira %d.%m.%Y %H:%M"), disable_notification="true")
+
+
 def cleaner():
+    hours = 0
     while True:
         try:
             run("DELETE FROM msgs WHERE ts<?", (int(time.time() - num("cache_days") * 86400),))
+            n = int(os.getenv("BACKUP_HOURS", "0") or 0)     # 0 = o'chiq
+            if n and hours and hours % n == 0: backup_to_admin()
         except Exception: elog()
+        hours += 1
         time.sleep(3600)
 
 
