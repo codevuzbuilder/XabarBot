@@ -1,0 +1,14 @@
+[Unit]
+Description=Telegram Business bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=xabarbot
+WorkingDirectory=/opt/xabarbot
+ExecStart=/opt/xabarbot/venv/bin/python bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

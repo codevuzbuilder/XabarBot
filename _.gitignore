@@ -1,0 +1,7 @@
+# maxfiy va ish vaqtidagi fayllar GitHub'ga tushmasin
+.env
+*.db
+errors.log
+__pycache__/
+venv/
+.venv/
