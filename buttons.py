@@ -1,6 +1,7 @@
 """buttons.py — foydalanuvchi tugmalari (18 ta) va admin panel menyulari (100 ta tugma)."""
 import os, sys, time, html
 from core import *
+from pay import *
 from ops import *
 
 # ----------------------------- Foydalanuvchi tugmalari -----------------------------
