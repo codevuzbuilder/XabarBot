@@ -3,6 +3,7 @@ import os, sys, io, csv, time, html, sqlite3
 from core import *
 from pay import *
 
+
 # ----------------------------- ADMIN: funksiyalar -----------------------------
 def _list(rows, fmt, empty="—"):
     return "\n".join(fmt(r) for r in rows) or empty
@@ -23,6 +24,7 @@ def f_partners(s, uid):
 
 
 def f_clones(s, uid):
+    if not s.main: return "❌ Bu amal faqat asosiy botda."
     return "🤖 Klon botlar:\n" + _list(q("SELECT * FROM clones"),
                                        lambda r: f"• @{BOTS[r['token']].username if r['token'] in BOTS else '?'} — hamkor <code>{r['owner']}</code>")
 
@@ -58,13 +60,13 @@ def f_promo_clean(s, uid):
 
 
 def f_admins(s, uid):
-    return "👮 Adminlar:\n• <code>%d</code> (asosiy)\n" % ADMIN_ID + _list(q("SELECT id FROM admins"), lambda r: f"• <code>{r['id']}</code>", "")
+    return "👮 Adminlar:\n• <code>%d</code> (asosiy)\n" % s.admin + _list(q("SELECT id FROM admins"), lambda r: f"• <code>{r['id']}</code>", "")
 
 
 def f_bot_info(s, uid):
     me = s.call("getMe") or {}
     return (f"🤖 @{me.get('username')}\n🆔 {me.get('id')}\n🏢 Business: {'✅ yoqilgan' if me.get('can_connect_to_business') else '❌ o‘chiq'}\n"
-            f"👥 Klonlar: {len(BOTS) - 1}")
+            + (f"\n👥 Klonlar: {len(BOTS) - 1}" if s.main else ""))
 
 
 def f_biz(s, uid):
@@ -77,11 +79,13 @@ def f_biz(s, uid):
 
 
 def f_errors(s, uid):
+    if not s.main: return "❌ Bu amal faqat asosiy botda."
     try: return "🧾 Xatolar:\n<pre>" + esc(open("errors.log").read()[-3000:]) + "</pre>"
     except OSError: return "✅ Xatolar yo'q."
 
 
 def f_restart(s, uid):
+    if not s.main: return "❌ Bu amal faqat asosiy botda."
     s.send(uid, "🔁 Qayta ishga tushmoqda…")
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
@@ -92,9 +96,9 @@ def f_ping(s, uid):
     return f"🏓 {int((time.time() - t0) * 1000)} ms"
 
 
-def f_db_size(s, uid): return f"🧮 DB hajmi: {os.path.getsize(DB_FILE) / 1024:.1f} KB"
+def f_db_size(s, uid): return f"🧮 DB hajmi: {os.path.getsize(D().path) / 1024:.1f} KB"
 def f_vacuum(s, uid):
-    with lock: con.execute("VACUUM")
+    with D().lock: D().con.execute("VACUUM")
     return "🪄 DB optimallashtirildi."
 
 
@@ -106,11 +110,7 @@ def f_clear_all(s, uid): return f"🗑 {run('DELETE FROM msgs')} ta xabar o'chir
 
 
 def f_backup(s, uid):
-    dst = sqlite3.connect("backup.db")
-    with lock: con.backup(dst)
-    dst.close()
-    s.upload("sendDocument", "document", "bot_backup.db", open("backup.db", "rb").read(), chat_id=uid)
-    os.remove("backup.db")
+    s.upload("sendDocument", "document", "bot_backup.db", backup_bytes(), chat_id=uid)
 
 
 def _csv(s, uid, sql, name, head):
@@ -136,7 +136,7 @@ def f_tc_balance(s, uid):
 
 
 def f_tc_test(s, uid):
-    miss = [n for n, k in (("API kalit", "tc_key"), ("Kassa ID", "tc_kassa"), ("API manzil", "tc_base")) if not g(k)]
+    miss = [n for n, k in (("Hisob API", "tc_hisob"), ("Kassa API", "tc_key"), ("API manzil", "tc_base")) if not g(k)]
     if miss: return "❌ Sozlanmagan: " + ", ".join(miss)
     try: return f"✅ Ulanish ishlayapti. Balans: {esc(tc_balance())}"
     except Exception as e: return f"❌ Ulanish xatosi: {esc(e)}"
@@ -191,14 +191,14 @@ def op_sendmsg(s, a, raw):
 
 def op_partner_add(s, a, raw):
     u = _need_user(a); run("UPDATE users SET is_partner=1 WHERE id=?", (u["id"],))
-    s.send(u["id"], "🎉 Siz hamkor qilindingiz!"); return "✅ Hamkor qilindi."
+    s.send(u["id"], "🎉 Siz hamkor qilindingiz! «🤖 Mening botim» tugmasi orqali o'z botingizni qo'shing."); return "✅ Hamkor qilindi."
 
 
 def op_partner_del(s, a, raw): u = _need_user(a); run("UPDATE users SET is_partner=0 WHERE id=?", (u["id"],)); return "✅ Hamkorlikdan chiqarildi."
-def op_partner_bal(s, a, raw): u = _need_user(a); return f"💰 Hamkor balansi: {money(u['balance'])} so'm"
 
 
 def op_clone_del(s, a, raw):
+    if not s.main: return "❌ Bu amal faqat asosiy botda."
     owner, n = int(a[0]), 0
     for c in q("SELECT token FROM clones WHERE owner=?", (owner,)):
         b = BOTS.pop(c["token"], None)
@@ -206,16 +206,6 @@ def op_clone_del(s, a, raw):
         n += 1
     run("DELETE FROM clones WHERE owner=?", (owner,))
     return f"🗑 {n} ta klon o'chirildi."
-
-
-def op_partner_users(s, a, raw):
-    return f"👥 Hamkor foydalanuvchilari: {q('SELECT COUNT(*) FROM users WHERE partner_id=?', (int(a[0]),), True)[0]}"
-
-
-def op_partner_pay(s, a, raw):
-    u, x = _need_user(a), float(a[1])
-    run("UPDATE users SET balance=balance-? WHERE id=?", (x, u["id"]))
-    s.send(u["id"], f"💸 Sizga {money(x)} so'm to'lab berildi."); return "✅ To'langan deb belgilandi."
 
 
 def op_promo_days(s, a, raw):
@@ -245,7 +235,7 @@ def op_promo_toggle(s, a, raw):
 def op_promo_announce(s, a, raw):
     p = q("SELECT * FROM promos WHERE code=?", (a[0].upper(),), True)
     if not p: raise ValueError
-    broadcast(s, ADMIN_ID, "all", f"🎁 Yangi promokod: {p['code']}\n«🎁 Promokod» tugmasini bosib kiriting!")
+    broadcast(s, s.admin, "all", f"🎁 Yangi promokod: {p['code']}\n«🎁 Promokod» tugmasini bosib kiriting!")
     return "📣 E'lon yuborilmoqda."
 
 
@@ -263,7 +253,7 @@ OPS = {k[3:]: v for k, v in globals().items() if k.startswith("op_") and callabl
 # ----------------------------- Admin tugmasini bajarish -----------------------------
 def btn_style(it):
     if any(e in it[0] for e in "🗑🚫➖🧹"): return "danger"
-    return {"set": "primary", "toggle": "success", "op": "primary", "bc": "primary"}.get(it[1], "")
+    return {"set": "primary", "toggle": "success", "op": "primary", "bc": "primary", "sql": "primary", "fn": "primary"}.get(it[1], "primary")
 
 
 def run_item(s, uid, it):
@@ -274,8 +264,8 @@ def run_item(s, uid, it):
         s.send(uid, f"{label}: <b>{money(v)}</b>")
     elif kind == "set":
         STATE[uid] = ("set", a, label)
-        shown = "••••••" if a in ("tc_key", "tc_secret") and g(a) else g(a)
-        s.send(uid, f"✏️ {label}\nHozirgi: <code>{esc(shown)}</code>\n\nYangi qiymatni yuboring:")
+        shown = "••••••" if a in SECRET and g(a) else g(a)
+        s.send(uid, f"✏️ {label}\nHozirgi: <code>{esc(shown)}</code>\n\nYangi qiymatni yuboring:", [[("🏠 Menyu", "")]])
     elif kind == "toggle":
         v = "0" if g(a) == "1" else "1"
         setv(a, v)
@@ -320,4 +310,4 @@ def r_clear(s, uid, m):
 
 for _lab, _key in (("📖 Qo'llanma", "guide_text"), ("❓ Savol-javob", "faq_text"),
                    ("🆘 Yordam", "support_text"), ("📜 Shartlar", "terms_text")):
-    ROUTES[_lab] = (lambda key: lambda s, uid, m: s.send(uid, ptext(s, key), main_rows(uid)))(_key)
+    ROUTES[_lab] = (lambda key: lambda s, uid, m: s.send(uid, g(key), main_rows(uid)))(_key)
