@@ -1,6 +1,7 @@
 """ops.py — admin panel funksiyalari/amallari, tugma bosilganda ishlovchi run_item va foydalanuvchining kichik tugmalari."""
 import os, sys, io, csv, time, html, sqlite3
 from core import *
+from pay import *
 
 # ----------------------------- ADMIN: funksiyalar -----------------------------
 def _list(rows, fmt, empty="—"):
@@ -319,4 +320,4 @@ def r_clear(s, uid, m):
 
 for _lab, _key in (("📖 Qo'llanma", "guide_text"), ("❓ Savol-javob", "faq_text"),
                    ("🆘 Yordam", "support_text"), ("📜 Shartlar", "terms_text")):
-    ROUTES[_lab] = (lambda key: lambda s, uid, m: s.send(uid, g(key), main_rows(uid)))(_key)
+    ROUTES[_lab] = (lambda key: lambda s, uid, m: s.send(uid, ptext(s, key), main_rows(uid)))(_key)
